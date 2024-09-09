@@ -55,44 +55,51 @@ class Card2Brain_LearnSectionFixes{
         //=========================================================
         // Fix Card2Brain Behaviour
         //=========================================================
-            this.initListener();
+            this.startObserver();
             this.getLearnCardElements();
         //=========================================================
     }
 
+
     /**
-     * initListener
-     * @description inits the global listener
+     * startObserver
+     * @description starts the observer (when the learnCard is loaded)
      * @return {void}
      */
-    initListener(){
-        let instance = this;
-        let body = $("body");
-        console.log( "INIT LISTENER" );
-        body.on("click",function(e){
-            let targetElement = $(e.target);
+    startObserver(){
+        // Select the node that will be observed for mutations
+        const targetNode = document.getElementById("currentCard");
 
-            if(targetElement.attr("id") === "nextCard" || (targetElement.attr("type") === "submit" && targetElement.parents(".nextCard").length )){
-                console.log( "NEXT ANSWER CLICKED" );
-                instance.fixAudioButton();
-                instance.initCheckAnwsersListener(instance);
+        // Options for the observer (which mutations to observe)
+        const config = { attributes: false, childList: true, subtree: true };
+
+        // Callback function to execute when mutations are observed
+        const callback = (mutationList, observer) => {
+        for (const mutation of mutationList) {
+                if (mutation.type === "childList") {
+                    if(mutation.addedNodes.length){
+
+                        // load the learnCards and fixes the audio button
+                        this.getLearnCardElements();
+                        this.fixAudioButton();
+
+                        // autoplay if new card is loaded
+                        if($(".currentCard .text-error").length == 0 && $("#dontKnowAnswer").length == 0){
+                            this.autoplay();
+                        } else{
+                            let findedObject = this.getCurrentCardObject();
+                            if(findedObject) eval(this.reversed? findedObject.frontSpeakFunction : findedObject.backSpeakFunction);
+                        }
+                    }
+                }
             }
-        });
-        instance.initCheckAnwsersListener(instance);
-    }
+        };
 
-    /**
-     * initCheckAnwsersListener
-     * @param {Card2Brain_LearnSectionFixes} instance 
-     */
-    initCheckAnwsersListener(instance){
-        let button = $("#checkAnswer");
-        button.on("click",function(e){
-            console.log( "CHECK ANSWER CLICKED" );
-            let reversed = instance.reversed;
-            let findedObject = instance.getCurrentCardObject();
-            if(findedObject) eval(reversed? findedObject.frontSpeakFunction : findedObject.backSpeakFunction);
-        });
+        // Create an observer instance linked to the callback function
+        const observer = new MutationObserver(callback);
+
+        // Start observing the target node for configured mutations
+        observer.observe(targetNode, config);
     }
 
     /**
@@ -102,9 +109,13 @@ class Card2Brain_LearnSectionFixes{
     getCurrentCardText(){
         let currentElement = $(".currentCard .col-12:first section.fs-card");
         let currentText = currentElement.html() || "";
+
+        // remove the html tags and get main text
         currentElement.children().each(function(){
             currentText = currentText.replace($(this).prop("outerHTML"), "");
         });
+
+        // trim and return
         currentText = currentText.trim();
         return currentText;
     }
@@ -114,7 +125,8 @@ class Card2Brain_LearnSectionFixes{
      * @returns {object} findedObject
      */
     getCurrentCardObject(){
-        let learnCards = this.getlearnCardsAll()
+        let learnCards = this.getlearnCardsAll();
+        console.log( "learnCards", learnCards );
         let currentText = this.getCurrentCardText();
         let findedObject = this.reversed? learnCards.find(obj => obj.backText === currentText) : learnCards.find(obj => obj.frontText === currentText);
         console.log( "currentText", currentText,"findedObject",  findedObject );
@@ -131,16 +143,41 @@ class Card2Brain_LearnSectionFixes{
     }
 
     /**
+     * getLearnCardCount
+     * @description gets the learnCards count
+     * @returns {number} cardsCount
+     */
+    async getLearnCardCount(){
+        let url = `https://card2brain.ch/box/${this.learnSetID}`;
+        let promise = new Promise((resolve, reject) => {
+            $.get(url, function(data) {
+                try {
+                    data = $(data);
+                    let count = parseInt(data.find(".fal.fa-credit-card-blank + .ms-2").html());
+                    resolve(count);
+                } catch (error) {
+                    reject(error);
+                    console.error(error);
+                }
+            });
+        });
+
+        let result = await promise;
+        return result;
+    }
+
+    /**
      * setlearnCardsAll
      * @description sets the learnCards and their informations
      * @return {void}
      */
-    setlearnCardsAll() {
+    async setlearnCardsAll() {
         let learnCards = [];
-        let cardsCount = 305;
+        let cardsCount = await this.getLearnCardCount();
         let promises = [];
-    
-        for (let i = 0; i < cardsCount - 1; i++) {
+        let instance = this;
+
+        for (let i = 0; i < cardsCount; i++) {
             let url = `https://card2brain.ch/box/${this.learnSetID}/loadNextSlide?chapter=&offset=${i}`;
             
             let promise = new Promise((resolve, reject) => {
@@ -149,15 +186,19 @@ class Card2Brain_LearnSectionFixes{
                         data = $(data);
                         let frontText = data.find(".flip-card-front section.fs-card").html().trim();
                         let backText = data.find(".flip-card-back section.fs-card p").html().trim();
-                        let frontSpeakFunction = data.find(".link[onclick^=speak]:first").attr("onclick");
-                        let backSpeakFunction = data.find(".link[onclick^=speak]:last").attr("onclick");
-                        let backIconButton = data.find(".link[onclick^=speak]:last").prop('outerHTML');
+                        let fixFrontText = instance.fixApostrophe(frontText);
+                        let fixBackText = instance.fixApostrophe(backText);
+                        let frontSpeakFunction = data.find(".link[onclick^=speak]:first").attr("onclick").replace(frontText, fixFrontText);
+                        let backSpeakFunction = data.find(".link[onclick^=speak]:last").attr("onclick").replace(backText, fixBackText);
+                        let frontIconButton = data.find(".link[onclick^=speak]:first").prop('outerHTML').replace(frontText, fixFrontText);
+                        let backIconButton = data.find(".link[onclick^=speak]:last").prop('outerHTML').replace(backText, fixBackText);
                         
                         let CardInfo = {
                             frontText,
                             backText,
                             frontSpeakFunction,
                             backSpeakFunction,
+                            frontIconButton,
                             backIconButton
                         };
                         
@@ -177,7 +218,6 @@ class Card2Brain_LearnSectionFixes{
                 // Push all card info into learnCards
                 learnCards.push(...results);
                 this.learnCards = learnCards;
-                console.log(this.learnCards);
 
                 this.fixAudioButton();
                 this.autoplay();
@@ -189,6 +229,16 @@ class Card2Brain_LearnSectionFixes{
             .catch(error => {
                 console.error("An error occurred:", error);
             });
+    }
+
+    /**
+     * fixApostrophe
+     * @description fixes the apostrophe, escape the apostrophe
+     * @param {String} text 
+     * @returns 
+     */
+    fixApostrophe(text){
+        return text.replaceAll(/'/g, "\\\'");
     }
 
     /**
@@ -229,8 +279,6 @@ class Card2Brain_LearnSectionFixes{
      * @return {void}
      */
     autoplay(){
-        console.log("autoplay")
-        console.log( this.primaryAudioButton );
         this.primaryAudioButton.click();
     }
 
@@ -245,7 +293,6 @@ class Card2Brain_LearnSectionFixes{
             if(findedObject){
                 console.log("fix audio button");
                 this.primaryAudioButton.attr("onclick", findedObject.backSpeakFunction);
-                // this.primaryAudioButton.trigger("click");
             } 
         }
     }
