@@ -51,16 +51,75 @@ class Card2Brain_LearnSectionFixes{
 
             // get the learnCards
             this.learnCards = [];
-            this.getlearnCardsAll();
+            this.setlearnCardsAll();
         //=========================================================
         // Fix Card2Brain Behaviour
         //=========================================================
+            this.initListener();
             this.getLearnCardElements();
-            this.autoplay();
         //=========================================================
-        console.log(`${this.pluginName} plugin is loaded`);
     }
 
+    /**
+     * initListener
+     * @description inits the global listener
+     * @return {void}
+     */
+    initListener(){
+        let instance = this;
+        let body = $("body");
+        console.log( "INIT LISTENER" );
+        body.on("click",function(e){
+            let targetElement = $(e.target);
+
+            if(targetElement.attr("id") === "nextCard" || (targetElement.attr("type") === "submit" && targetElement.parents(".nextCard").length )){
+                console.log( "NEXT ANSWER CLICKED" );
+                instance.fixAudioButton();
+                instance.initCheckAnwsersListener(instance);
+            }
+        });
+        instance.initCheckAnwsersListener(instance);
+    }
+
+    /**
+     * initCheckAnwsersListener
+     * @param {Card2Brain_LearnSectionFixes} instance 
+     */
+    initCheckAnwsersListener(instance){
+        let button = $("#checkAnswer");
+        button.on("click",function(e){
+            console.log( "CHECK ANSWER CLICKED" );
+            let reversed = instance.reversed;
+            let findedObject = instance.getCurrentCardObject();
+            if(findedObject) eval(reversed? findedObject.frontSpeakFunction : findedObject.backSpeakFunction);
+        });
+    }
+
+    /**
+     * getCurrentCardText
+     * @returns {string} currentText
+     */
+    getCurrentCardText(){
+        let currentElement = $(".currentCard .col-12:first section.fs-card");
+        let currentText = currentElement.html() || "";
+        currentElement.children().each(function(){
+            currentText = currentText.replace($(this).prop("outerHTML"), "");
+        });
+        currentText = currentText.trim();
+        return currentText;
+    }
+
+    /**
+     * getCurrentCardObject
+     * @returns {object} findedObject
+     */
+    getCurrentCardObject(){
+        let learnCards = this.getlearnCardsAll()
+        let currentText = this.getCurrentCardText();
+        let findedObject = this.reversed? learnCards.find(obj => obj.backText === currentText) : learnCards.find(obj => obj.frontText === currentText);
+        console.log( "currentText", currentText,"findedObject",  findedObject );
+        return findedObject
+    }
 
     /**
      * getlearnCardsAll
@@ -68,26 +127,68 @@ class Card2Brain_LearnSectionFixes{
      * @return {void}
      */
     getlearnCardsAll(){
+        return this.learnCards;
+    }
+
+    /**
+     * setlearnCardsAll
+     * @description sets the learnCards and their informations
+     * @return {void}
+     */
+    setlearnCardsAll() {
         let learnCards = [];
         let cardsCount = 305;
-        for(let i = 0; i < cardsCount-1; i++){
-            let url = `https://card2brain.ch/box/${this.learnSetID}/loadNextSlide?chapter=&offset=${i}`
-            $.get(url, function(data){
-                data = $(data);
-                let frontText = data.find(".flip-card-front section.fs-card").html().trim();
-                let backText = data.find(".flip-card-back section.fs-card p").html().trim();
-                let firstSpeakFunction = data.find(".link[onclick^=speak]:first").attr("onclick");
-                let secondSpeakFunction = data.find(".link[onclick^=speak]:last").attr("onclick");
-                let CardInfo = {
-                    frontText,
-                    backText,
-                    firstSpeakFunction,
-                    secondSpeakFunction
-                };
-                learnCards.push(CardInfo);
-                this.learnCards = learnCards;
+        let promises = [];
+    
+        for (let i = 0; i < cardsCount - 1; i++) {
+            let url = `https://card2brain.ch/box/${this.learnSetID}/loadNextSlide?chapter=&offset=${i}`;
+            
+            let promise = new Promise((resolve, reject) => {
+                $.get(url, function(data) {
+                    try {
+                        data = $(data);
+                        let frontText = data.find(".flip-card-front section.fs-card").html().trim();
+                        let backText = data.find(".flip-card-back section.fs-card p").html().trim();
+                        let frontSpeakFunction = data.find(".link[onclick^=speak]:first").attr("onclick");
+                        let backSpeakFunction = data.find(".link[onclick^=speak]:last").attr("onclick");
+                        let backIconButton = data.find(".link[onclick^=speak]:last").prop('outerHTML');
+                        
+                        let CardInfo = {
+                            frontText,
+                            backText,
+                            frontSpeakFunction,
+                            backSpeakFunction,
+                            backIconButton
+                        };
+                        
+                        resolve(CardInfo); // Resolve the promise with the card info
+                    } catch (error) {
+                        reject(error); // Reject the promise if an error occurs
+                    }
+                });
             });
+    
+            promises.push(promise); // Push each promise into the array
         }
+    
+        // Use Promise.all to wait for all promises to resolve
+        Promise.all(promises)
+            .then(results => {
+                // Push all card info into learnCards
+                learnCards.push(...results);
+                this.learnCards = learnCards;
+                console.log(this.learnCards);
+
+                this.fixAudioButton();
+                this.autoplay();
+
+                let successMessage = `${this.pluginName} plugin is loaded`;
+                console.log(successMessage);
+                alert(successMessage);
+            })
+            .catch(error => {
+                console.error("An error occurred:", error);
+            });
     }
 
     /**
@@ -128,8 +229,27 @@ class Card2Brain_LearnSectionFixes{
      * @return {void}
      */
     autoplay(){
+        console.log("autoplay")
+        console.log( this.primaryAudioButton );
         this.primaryAudioButton.click();
     }
+
+    /**
+     * fixAudioButton
+     * @description fixes the audio button
+     * @return {void}
+     */
+    fixAudioButton(){
+        if(this.reversed){
+            let findedObject = this.getCurrentCardObject();
+            if(findedObject){
+                console.log("fix audio button");
+                this.primaryAudioButton.attr("onclick", findedObject.backSpeakFunction);
+                // this.primaryAudioButton.trigger("click");
+            } 
+        }
+    }
+
 }
 
 /**
