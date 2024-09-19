@@ -19,7 +19,6 @@ class Card2Brain_LearnSectionFixes{
     static pluginName;
 
     static learnSetID;
-    static learnCards;
     static reversed;
 
     static learnCard;
@@ -49,9 +48,6 @@ class Card2Brain_LearnSectionFixes{
             this.reversed = false;
             this.checkLearnCardReversed();
 
-            // get the learnCards
-            this.learnCards = [];
-            this.setlearnCardsAll();
         //=========================================================
         // Fix Card2Brain Behaviour
         //=========================================================
@@ -81,14 +77,12 @@ class Card2Brain_LearnSectionFixes{
 
                         // load the learnCards and fixes the audio button
                         this.getLearnCardElements();
-                        this.fixAudioButton();
 
                         // autoplay if new card is loaded
                         if($(".currentCard .text-error").length == 0 && $("#dontKnowAnswer").length == 0){
                             this.autoplay();
                         } else{
-                            let findedObject = this.getCurrentCardObject();
-                            if(findedObject) eval(this.reversed? findedObject.frontSpeakFunction : findedObject.backSpeakFunction);
+                            this.autoplaySecondary();
                         }
                     }
                 }
@@ -100,145 +94,6 @@ class Card2Brain_LearnSectionFixes{
 
         // Start observing the target node for configured mutations
         observer.observe(targetNode, config);
-    }
-
-    /**
-     * getCurrentCardText
-     * @returns {string} currentText
-     */
-    getCurrentCardText(){
-        let currentElement = $(".currentCard .col-12:first section.fs-card");
-        let currentText = currentElement.html() || "";
-
-        // remove the html tags and get main text
-        currentElement.children().each(function(){
-            currentText = currentText.replace($(this).prop("outerHTML"), "");
-        });
-
-        // trim and return
-        currentText = currentText.trim();
-        return currentText;
-    }
-
-    /**
-     * getCurrentCardObject
-     * @returns {object} findedObject
-     */
-    getCurrentCardObject(){
-        let learnCards = this.getlearnCardsAll();
-        console.log( "learnCards", learnCards );
-        let currentText = this.getCurrentCardText();
-        let findedObject = this.reversed? learnCards.find(obj => obj.backText === currentText) : learnCards.find(obj => obj.frontText === currentText);
-        console.log( "currentText", currentText,"findedObject",  findedObject );
-        return findedObject
-    }
-
-    /**
-     * getlearnCardsAll
-     * @description gets the learnCards and their informations
-     * @return {void}
-     */
-    getlearnCardsAll(){
-        return this.learnCards;
-    }
-
-    /**
-     * getLearnCardCount
-     * @description gets the learnCards count
-     * @returns {number} cardsCount
-     */
-    async getLearnCardCount(){
-        let url = `https://card2brain.ch/box/${this.learnSetID}`;
-        let promise = new Promise((resolve, reject) => {
-            $.get(url, function(data) {
-                try {
-                    data = $(data);
-                    let count = parseInt(data.find(".fal.fa-credit-card-blank + .ms-2").html());
-                    resolve(count);
-                } catch (error) {
-                    reject(error);
-                    console.error(error);
-                }
-            });
-        });
-
-        let result = await promise;
-        return result;
-    }
-
-    /**
-     * setlearnCardsAll
-     * @description sets the learnCards and their informations
-     * @return {void}
-     */
-    async setlearnCardsAll() {
-        let learnCards = [];
-        let cardsCount = await this.getLearnCardCount();
-        let promises = [];
-        let instance = this;
-
-        for (let i = 0; i < cardsCount; i++) {
-            let url = `https://card2brain.ch/box/${this.learnSetID}/loadNextSlide?chapter=&offset=${i}`;
-            
-            let promise = new Promise((resolve, reject) => {
-                $.get(url, function(data) {
-                    try {
-                        data = $(data);
-                        let frontText = data.find(".flip-card-front section.fs-card").html().trim();
-                        let backText = data.find(".flip-card-back section.fs-card p").html().trim();
-                        let fixFrontText = instance.fixApostrophe(frontText);
-                        let fixBackText = instance.fixApostrophe(backText);
-                        let frontSpeakFunction = data.find(".link[onclick^=speak]:first").attr("onclick").replace(frontText, fixFrontText);
-                        let backSpeakFunction = data.find(".link[onclick^=speak]:last").attr("onclick").replace(backText, fixBackText);
-                        let frontIconButton = data.find(".link[onclick^=speak]:first").prop('outerHTML').replace(frontText, fixFrontText);
-                        let backIconButton = data.find(".link[onclick^=speak]:last").prop('outerHTML').replace(backText, fixBackText);
-                        
-                        let CardInfo = {
-                            frontText,
-                            backText,
-                            frontSpeakFunction,
-                            backSpeakFunction,
-                            frontIconButton,
-                            backIconButton
-                        };
-                        
-                        resolve(CardInfo); // Resolve the promise with the card info
-                    } catch (error) {
-                        reject(error); // Reject the promise if an error occurs
-                    }
-                });
-            });
-    
-            promises.push(promise); // Push each promise into the array
-        }
-    
-        // Use Promise.all to wait for all promises to resolve
-        Promise.all(promises)
-            .then(results => {
-                // Push all card info into learnCards
-                learnCards.push(...results);
-                this.learnCards = learnCards;
-
-                this.fixAudioButton();
-                this.autoplay();
-
-                let successMessage = `${this.pluginName} plugin is loaded`;
-                console.log(successMessage);
-                alert(successMessage);
-            })
-            .catch(error => {
-                console.error("An error occurred:", error);
-            });
-    }
-
-    /**
-     * fixApostrophe
-     * @description fixes the apostrophe, escape the apostrophe
-     * @param {String} text 
-     * @returns 
-     */
-    fixApostrophe(text){
-        return text.replaceAll(/'/g, "\\\'");
     }
 
     /**
@@ -269,8 +124,9 @@ class Card2Brain_LearnSectionFixes{
      */
     getLearnCardElements(){
         this.learnCard = $(".learn-card");
-        this.primaryAudioButton = this.learnCard.find(".link[onclick^=speak]")
-        this.secondaryAudioButton = null;
+        let audioButtons = this.learnCard.find(".link[onclick^=speak]");
+        this.primaryAudioButton = audioButtons[0] || null;
+        this.secondaryAudioButton = audioButtons[1] || null;
     }
 
     /**
@@ -282,21 +138,15 @@ class Card2Brain_LearnSectionFixes{
         this.primaryAudioButton.click();
     }
 
+
     /**
-     * fixAudioButton
-     * @description fixes the audio button
+     * autoplaySecondary
+     * @description plays the secondary audio directly in the learning section
      * @return {void}
      */
-    fixAudioButton(){
-        if(this.reversed){
-            let findedObject = this.getCurrentCardObject();
-            if(findedObject){
-                console.log("fix audio button");
-                this.primaryAudioButton.attr("onclick", findedObject.backSpeakFunction);
-            } 
-        }
+    autoplaySecondary(){
+        this.secondaryAudioButton.click();
     }
-
 }
 
 /**
